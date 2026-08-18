@@ -1,0 +1,16 @@
+.vscode/
+
+*.out
+*.exe
+*.o
+*.obj
+
+gmon.out
+vgcore.*
+core
+core.*
+
+build/
+cmake-build-*/
+
+luac.out
