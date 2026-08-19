@@ -14,3 +14,6 @@ build/
 cmake-build-*/
 
 luac.out
+
+lua-5.5.0/
+!lua5.5-student-src.zip
