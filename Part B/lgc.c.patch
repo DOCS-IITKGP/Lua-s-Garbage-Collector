@@ -1,0 +1,21 @@
+--- original/lua-5.5.0/src/lgc.c	2025-12-15 10:44:39.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lgc.c	2026-08-24 17:08:51.201945200 +0000
+@@ -31,7 +31,7 @@
+ ** (Large enough to dissipate fixed overheads but small enough
+ ** to allow small steps for the collector.)
+ */
+-#define GCSWEEPMAX	20
++static int GCSWEEPMAX = 20;  /* default; tunable via setsweepstep() */
+ 
+ 
+ /*
+@@ -1802,3 +1802,8 @@
+ /* }====================================================== */
+ 
+ 
++/* Part B: make sweep granularity tunable at runtime */
++void setsweepstep (lua_State *L, int n) {
++    (void)L;
++    GCSWEEPMAX = (n <= 0) ? 20 : n;
++}
+\ No newline at end of file

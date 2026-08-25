@@ -16,4 +16,14 @@ cmake-build-*/
 luac.out
 
 lua-5.5.0/
+original/
 !lua5.5-student-src.zip
+
+# Compiled test drivers
+Part B/sweeptest
+Part C/escapetest
+
+# Callgrind outputs (large, generated files)
+callgrind.out.*
+*.out
+

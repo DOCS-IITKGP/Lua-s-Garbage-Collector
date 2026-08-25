@@ -1,0 +1,11 @@
+--- original/lua-5.5.0/src/lua.h	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lua.h	2026-08-24 17:09:34.805167500 +0000
+@@ -358,7 +358,7 @@
+ 
+ 
+ LUA_API int (lua_gc) (lua_State *L, int what, ...);
+-
++void setsweepstep (lua_State *L, int n);
+ 
+ /*
+ ** miscellaneous functions
