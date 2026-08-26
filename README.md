@@ -157,6 +157,8 @@ gcc -g -O2 \
 
 ---
 
-## Part C: Static Escape Analysis (coming)
+## Part C: Static Escape Analysis
+Part 1 (Done)
+Part 2 (Coming)
 
 ## Part D: Benchmarking (coming)

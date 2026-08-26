@@ -1,0 +1,235 @@
+--- original/lua-5.5.0/src/lparser.c	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lparser.c	2026-08-26 13:33:35.684764600 +0000
+@@ -28,6 +28,8 @@
+ #include "lstring.h"
+ #include "ltable.h"
+ 
++#include <stdio.h>  /* C.1: for escape analysis debug output */
++
+ 
+ 
+ /* maximum number of variable declarations per function (must be
+@@ -479,8 +481,15 @@
+     if (!base) {
+       if (var->k == VVARGVAR)  /* vararg parameter? */
+         luaK_vapar2local(fs, var);  /* change it to a regular local */
+-      if (var->k == VLOCAL)
++      if (var->k == VLOCAL){
+         markupval(fs, var->u.var.vidx);  /* will be used as an upvalue */
++        /* C.1 Rule 2: if captured variable is a table-local, it escapes */
++        {
++            Vardesc *vd = getlocalvardesc(fs, var->u.var.vidx);
++            if (vd->vd.is_table)
++                vd->vd.escapes = 1;
++        }
++      }
+     }
+     /* else nothing else to be done */
+   }
+@@ -536,7 +545,9 @@
+ 
+ 
+ static void singlevar (LexState *ls, expdesc *var) {
+-  buildvar(ls, str_checkname(ls), var);
++  TString *varname = str_checkname(ls);
++  ls->last_callee_name = varname;  /* C.1: track name for Rule 4 whitelist */
++  buildvar(ls, varname, var);
+ }
+ 
+ 
+@@ -814,6 +825,7 @@
+   fs->ndebugvars = 0;
+   fs->nactvar = 0;
+   fs->needclose = 0;
++  fs->num_escape_deps = 0;  /* C.1: no Rule 3 store-escape deps yet */
+   fs->firstlocal = ls->dyd->actvar.n;
+   fs->firstlabel = ls->dyd->label.n;
+   fs->bl = NULL;
+@@ -831,6 +843,35 @@
+   lua_State *L = ls->L;
+   FuncState *fs = ls->fs;
+   Proto *f = fs->f;
++  /* C.1: fixed-point propagation for Rule 3 store-escape dependencies */
++  {
++      int changed = 1;
++      while (changed) {
++          int d;
++          changed = 0;
++          for (d = 0; d < fs->num_escape_deps; d++) {
++              EscapeDep *dep = &fs->escape_deps[d];
++              Vardesc *src = getlocalvardesc(fs, dep->src_vidx);
++              Vardesc *dst = getlocalvardesc(fs, dep->dep_vidx);
++              if (src->vd.escapes && !dst->vd.escapes) {
++                  dst->vd.escapes = 1;
++                  changed = 1;
++              }
++          }
++      }
++  }
++  /* C.1: debug output — print escape analysis results */
++  {
++      int v;
++      for (v = 0; v < fs->nactvar; v++) {
++          Vardesc *vd = getlocalvardesc(fs, v);
++          if (vd->vd.is_table) {
++              printf("[escape-analysis] '%s' -> %s\n",
++                     getstr(vd->vd.name),
++                     vd->vd.escapes ? "ESCAPES" : "NON-ESCAPING");
++          }
++      }
++  }
+   luaK_ret(fs, luaY_nvarstack(fs), 0);  /* final return */
+   leaveblock(fs);
+   lua_assert(fs->bl == NULL);
+@@ -1051,6 +1092,7 @@
+   check_match(ls, /*{*/ '}', '{' /*}*/, line);
+   lastlistfield(fs, &cc);
+   luaK_settablesize(fs, pc, t->u.info, cc.na, cc.nh);
++  ls->last_was_constructor = 1;  /* C.1: signal to localstat() that RHS was {} */
+ }
+ 
+ /* }====================================================================== */
+@@ -1140,6 +1182,7 @@
+   expdesc args;
+   int base, nparams;
+   int line = ls->linenumber;
++  TString *saved_callee = ls->last_callee_name;  /* C.1: save before args overwrite it */
+   switch (ls->t.token) {
+     case '(': {  /* funcargs -> '(' [ explist ] ')' */
+       luaX_next(ls);
+@@ -1147,6 +1190,12 @@
+         args.k = VVOID;
+       else {
+         explist(ls, &args);
++        /* C.1: save args info before luaK_exp2nextreg changes it */
++        if (args.k == VLOCAL) {
++            Vardesc *vd = getlocalvardesc(fs, args.u.var.vidx);
++            if (vd->vd.is_table)
++                vd->vd.escapes = 2;  /* mark temporarily, Rule 4 checks below */
++        }
+         if (hasmultret(args.k))
+           luaK_setmultret(fs, &args);
+       }
+@@ -1175,7 +1224,42 @@
+       luaK_exp2nextreg(fs, &args);  /* close last argument */
+     nparams = fs->freereg - (base+1);
+   }
++
+   init_exp(f, VCALL, luaK_codeABC(fs, OP_CALL, base, nparams+1, 2));
++  /* C.1 Rule 4: if table-local is passed to a non-whitelisted function, it escapes */
++  {
++      int is_safe = 0;
++      TString *callee = saved_callee;
++      if (callee) {
++          const char *name = getstr(callee);
++          if (strcmp(name, "print") == 0 ||
++              strcmp(name, "type") == 0 ||
++              strcmp(name, "pairs") == 0 ||
++              strcmp(name, "ipairs") == 0 ||
++              strcmp(name, "tostring") == 0 ||
++              strcmp(name, "tonumber") == 0)
++              is_safe = 1;
++      }
++      if (!is_safe) {
++          /* Check all table-locals that were tentatively marked (escapes==2) */
++          int v;
++          for (v = 0; v < fs->nactvar; v++) {
++              Vardesc *vd = getlocalvardesc(fs, v);
++              if (vd->vd.is_table && vd->vd.escapes == 2)
++                  vd->vd.escapes = 1;  /* confirm: not whitelisted */
++          }
++      }
++      else {
++          /* Whitelisted: undo the tentative mark */
++          int v;
++          for (v = 0; v < fs->nactvar; v++) {
++              Vardesc *vd = getlocalvardesc(fs, v);
++              if (vd->vd.is_table && vd->vd.escapes == 2)
++                  vd->vd.escapes = 0;  /* safe: revert */
++          }
++      }
++      ls->last_callee_name = NULL;  /* reset */
++  }
+   luaK_fixline(fs, line);
+   /* call removes function and arguments and leaves one result (unless
+      changed later) */
+@@ -1515,8 +1599,42 @@
+     nexps = explist(ls, &e);
+     if (nexps != nvars)
+       adjust_assign(ls, nvars, nexps, &e);
+-    else {
++        else {
+       luaK_setoneret(ls->fs, &e);  /* close last expression */
++      /* C.1 Rule 3: if storing a table-local into an indexed target */
++      if (e.k == VLOCAL && vkisindexed(lh->v.k)) {
++          FuncState *fs = ls->fs;
++          Vardesc *val_vd = getlocalvardesc(fs, e.u.var.vidx);
++          if (val_vd->vd.is_table) {
++              if (lh->v.k == VINDEXUP) {
++                  /* target is a global/upvalue table — immediate escape */
++                  val_vd->vd.escapes = 1;
++              }
++              else {
++                  /* target is a local table — record dependency */
++                  /* find which local owns the target register */
++                  int tv;
++                  int found = 0;
++                  for (tv = 0; tv < fs->nactvar; tv++) {
++                      Vardesc *tvd = getlocalvardesc(fs, tv);
++                      if (tvd->vd.ridx == lh->v.u.ind.t) {
++                          if (fs->num_escape_deps < MAX_ESCAPE_DEPS) {
++                              EscapeDep *dep = &fs->escape_deps[fs->num_escape_deps++];
++                              dep->src_vidx = tv;
++                              dep->dep_vidx = e.u.var.vidx;
++                          }
++                          else {
++                              val_vd->vd.escapes = 1;  /* overflow: conservative */
++                          }
++                          found = 1;
++                          break;
++                      }
++                  }
++                  if (!found)
++                      val_vd->vd.escapes = 1;  /* unknown target: conservative */
++              }
++          }
++      }
+       luaK_storevar(ls->fs, &lh->v, &e);
+       return;  /* avoid default */
+     }
+@@ -1855,6 +1973,21 @@
+     adjust_assign(ls, nvars, nexps, &e);
+     adjustlocalvars(ls, nvars);
+   }
++
++  /* C.1: initialize escape fields and tag table-locals */
++  {
++    int i;
++    for (i = 0; i < nvars; i++) {
++      Vardesc *vd = getlocalvardesc(fs, fs->nactvar - nvars + i);
++      vd->vd.is_table = 0;
++      vd->vd.escapes = 0;
++    }
++    if (nvars == 1 && nexps == 1 && ls->last_was_constructor) {
++      Vardesc *vd = getlocalvardesc(fs, fs->nactvar - 1);
++      vd->vd.is_table = 1;
++    }
++    ls->last_was_constructor = 0;
++  }
+   checktoclose(fs, toclose);
+ }
+ 
+@@ -2024,6 +2157,13 @@
+     nret = 0;  /* return no values */
+   else {
+     nret = explist(ls, &e);  /* optional return values */
++    /* C.1 Rule 1: if a table-local is returned, it escapes */
++    if (e.k == VLOCAL) {
++        Vardesc *vd = getlocalvardesc(fs, e.u.var.vidx);
++        if (vd->vd.is_table)
++            vd->vd.escapes = 1;
++    }
++
+     if (hasmultret(e.k)) {
+       luaK_setmultret(fs, &e);
+       if (e.k == VCALL && nret == 1 && !fs->bl->insidetbc) {  /* tail call? */
