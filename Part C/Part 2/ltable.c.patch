@@ -1,0 +1,27 @@
+--- original/lua-5.5.0/src/ltable.c	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/ltable.c	2026-08-28 17:23:35.306663000 +0000
+@@ -807,6 +807,24 @@
+   return t;
+ }
+ 
++/* C.2: create a table from the frame arena (no GC linkage) */
++Table *luaH_new_arena (lua_State *L, FrameArena *arena) {
++  void *mem = luaM_arena_alloc(arena, sizeof(Table));
++  Table *t;
++  if (mem == NULL)
++      return luaH_new(L);  /* arena full — fall back to GC heap */
++  t = cast(Table *, mem);
++  /* Initialize like a normal table but WITHOUT GC linkage */
++  t->tt = LUA_VTABLE;
++  t->marked = 0;
++  t->next = NULL;  /* not in any GC list */
++  t->metatable = NULL;
++  t->flags = maskflags;
++  t->array = NULL;
++  t->asize = 0;
++  setnodevector(L, t, 0);
++  return t;
++}
+ 
+ lu_mem luaH_size (Table *t) {
+   lu_mem sz = cast(lu_mem, sizeof(Table)) + concretesize(t->asize);

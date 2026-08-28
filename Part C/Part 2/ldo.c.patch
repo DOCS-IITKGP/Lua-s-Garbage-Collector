@@ -1,0 +1,29 @@
+--- original/lua-5.5.0/src/ldo.c	2025-12-15 10:44:39.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/ldo.c	2026-08-28 17:44:54.049450500 +0000
+@@ -611,6 +611,12 @@
+   /* function cannot be in any of these cases when returning */
+   lua_assert(!(ci->callstatus &
+         (CIST_HOOKED | CIST_YPCALL | CIST_FIN | CIST_CLSRET)));
++  
++  /* C.2: free the frame arena if one was allocated */
++  if (ci->arena != NULL) {
++      luaM_arena_free(L, ci->arena);
++      ci->arena = NULL;
++  }
+   L->ci = ci->previous;  /* back to caller (after closing variables) */
+ }
+ 
+@@ -735,6 +741,13 @@
+       for (; narg < nfixparams; narg++)
+         setnilvalue(s2v(L->top.p++));  /* complete missing arguments */
+       lua_assert(ci->top.p <= L->stack_last.p);
++
++      /* C.2: create arena if this function has arena-eligible tables */
++      if (p->num_arena_pcs > 0)
++          ci->arena = luaM_arena_new(L);
++      else
++          ci->arena = NULL;
++      
+       return ci;
+     }
+     default: {  /* not a function */

@@ -1,0 +1,18 @@
+--- original/lua-5.5.0/src/ltable.h	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/ltable.h	2026-08-28 17:27:11.301656600 +0000
+@@ -9,6 +9,7 @@
+ 
+ #include "lobject.h"
+ 
++typedef struct FrameArena FrameArena;  /* C.2: forward declaration */
+ 
+ #define gnode(t,i)	(&(t)->node[i])
+ #define gval(n)		(&(n)->i_val)
+@@ -172,6 +173,7 @@
+ LUAI_FUNC void luaH_resizearray (lua_State *L, Table *t, unsigned nasize);
+ LUAI_FUNC lu_mem luaH_size (Table *t);
+ LUAI_FUNC void luaH_free (lua_State *L, Table *t);
++LUAI_FUNC Table *luaH_new_arena (lua_State *L, FrameArena *arena);  /* C.2 */
+ LUAI_FUNC int luaH_next (lua_State *L, Table *t, StkId key);
+ LUAI_FUNC lua_Unsigned luaH_getn (lua_State *L, Table *t);
+ 

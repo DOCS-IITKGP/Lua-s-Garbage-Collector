@@ -1,0 +1,37 @@
+--- original/lua-5.5.0/src/lvm.c	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lvm.c	2026-08-28 17:34:19.937523400 +0000
+@@ -26,6 +26,7 @@
+ #include "lobject.h"
+ #include "lopcodes.h"
+ #include "lstate.h"
++#include "lmem.h" // C: 2
+ #include "lstring.h"
+ #include "ltable.h"
+ #include "ltm.h"
+@@ -1418,7 +1419,25 @@
+         }
+         pc++;  /* skip extra argument */
+         L->top.p = ra + 1;  /* correct top in case of emergency GC */
+-        t = luaH_new(L);  /* memory allocation */
++        // t = luaH_new(L);  /* memory allocation */
++        /* C.2: check if this NEWTABLE is arena-eligible */
++        {
++            int arena_alloc = 0;
++            if (ci->arena != NULL && cl->p->num_arena_pcs > 0) {
++                int thispc = cast_int(pc - 1 - cl->p->code);  /* PC of this instruction */
++                int ap;
++                for (ap = 0; ap < cl->p->num_arena_pcs; ap++) {
++                    if (cl->p->arena_pcs[ap] == thispc) {
++                        arena_alloc = 1;
++                        break;
++                    }
++                }
++            }
++            if (arena_alloc)
++                t = luaH_new_arena(L, ci->arena);  /* C.2: arena allocation */
++            else
++                t = luaH_new(L);  /* normal GC heap allocation */
++        }
+         sethvalue2s(L, ra, t);
+         if (b != 0 || c != 0)
+           luaH_resize(L, t, c, b);  /* idem */

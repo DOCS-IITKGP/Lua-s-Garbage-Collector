@@ -1,0 +1,21 @@
+--- original/lua-5.5.0/src/lmem.h	2025-12-15 10:44:39.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lmem.h	2026-08-28 17:14:34.930977200 +0000
+@@ -92,5 +92,17 @@
+                                     int final_n, unsigned size_elem);
+ LUAI_FUNC void *luaM_malloc_ (lua_State *L, size_t size, int tag);
+ 
+-#endif
++/* C.2: Frame-arena bump allocator for non-escaping tables */
++#define ARENA_SIZE 4096  /* 4KB per arena, fits ~40 tables */
++
++typedef struct FrameArena {
++    char *buf;        /* the memory block */
++    size_t used;      /* bytes used so far */
++    size_t capacity;  /* total bytes available */
++} FrameArena;
+ 
++LUAI_FUNC FrameArena *luaM_arena_new(lua_State *L);
++LUAI_FUNC void *luaM_arena_alloc(FrameArena *arena, size_t size);
++LUAI_FUNC void luaM_arena_free(lua_State *L, FrameArena *arena);
++
++#endif

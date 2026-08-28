@@ -1,0 +1,36 @@
+--- original/lua-5.5.0/src/lmem.c	2025-12-15 10:44:39.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lmem.c	2026-08-28 17:11:04.012717400 +0000
+@@ -213,3 +213,32 @@
+     return newblock;
+   }
+ }
++
++/* C.2: Frame-arena bump allocator for non-escaping tables */
++
++FrameArena *luaM_arena_new (lua_State *L) {
++    FrameArena *arena = cast(FrameArena *, luaM_malloc_(L, sizeof(FrameArena), 0));
++    arena->buf = cast(char *, luaM_malloc_(L, ARENA_SIZE, 0));
++    arena->used = 0;
++    arena->capacity = ARENA_SIZE;
++    return arena;
++}
++
++void *luaM_arena_alloc (FrameArena *arena, size_t size) {
++    /* align to 8 bytes for safe struct access */
++    size = (size + 7) & ~(size_t)7;
++    if (arena == NULL || arena->used + size > arena->capacity)
++        return NULL;  /* no room — caller falls back to GC heap */
++    else {
++        void *p = arena->buf + arena->used;
++        arena->used += size;
++        return p;
++    }
++}
++
++void luaM_arena_free (lua_State *L, FrameArena *arena) {
++    if (arena != NULL) {
++        luaM_free_(L, arena->buf, arena->capacity);
++        luaM_free_(L, arena, sizeof(FrameArena));
++    }
++}
+\ No newline at end of file

@@ -1,0 +1,18 @@
+--- original/lua-5.5.0/src/lstate.h	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lstate.h	2026-08-28 17:14:26.858680400 +0000
+@@ -12,6 +12,7 @@
+ 
+ /* Some header files included here need this definition */
+ typedef struct CallInfo CallInfo;
++typedef struct FrameArena FrameArena;  /* C.2: forward declaration */
+ 
+ 
+ #include "lobject.h"
+@@ -206,6 +207,7 @@
+     int nres;  /* number of values returned */
+   } u2;
+   l_uint32 callstatus;
++  FrameArena *arena;  /* C.2: bump arena for non-escaping tables */
+ };
+ 
+ 

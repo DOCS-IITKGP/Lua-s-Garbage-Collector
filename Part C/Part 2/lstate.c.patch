@@ -1,0 +1,18 @@
+--- original/lua-5.5.0/src/lstate.c	2025-12-15 10:44:40.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lstate.c	2026-08-28 17:47:06.178915900 +0000
+@@ -77,6 +77,7 @@
+   ci->previous = L->ci;
+   ci->next = NULL;
+   ci->u.l.trap = 0;
++  ci->arena = NULL;  /* C.2: no arena by default */
+   L->nci++;
+   return ci;
+ }
+@@ -150,6 +151,7 @@
+   ci->top.p = ci->func.p + 1 + LUA_MINSTACK;  /* +1 for 'function' entry */
+   ci->u.c.k = NULL;
+   ci->callstatus = CIST_C;
++  ci->arena = NULL;  /* C.2 */
+   L->status = LUA_OK;
+   L->errfunc = 0;  /* stack unwind can "throw away" the error function */
+ }

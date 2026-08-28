@@ -1,0 +1,20 @@
+--- original/lua-5.5.0/src/lfunc.c	2025-12-15 10:44:39.000000000 +0000
++++ lua5.5-student-src/lua-5.5.0/src/lfunc.c	2026-08-28 17:21:15.295465900 +0000
+@@ -263,6 +263,8 @@
+   f->linedefined = 0;
+   f->lastlinedefined = 0;
+   f->source = NULL;
++  f->arena_pcs = NULL;       /* C.2: no arena-eligible NEWTABLEs yet */
++  f->num_arena_pcs = 0;      /* C.2 */
+   return f;
+ }
+ 
+@@ -292,6 +294,8 @@
+   luaM_freearray(L, f->k, cast_sizet(f->sizek));
+   luaM_freearray(L, f->locvars, cast_sizet(f->sizelocvars));
+   luaM_freearray(L, f->upvalues, cast_sizet(f->sizeupvalues));
++  if (f->arena_pcs != NULL)                                           /* C.2 */
++      luaM_freearray(L, f->arena_pcs, cast_sizet(f->num_arena_pcs));  /* C.2 */
+   luaM_free(L, f);
+ }
+ 
