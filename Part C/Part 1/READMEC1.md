@@ -33,7 +33,7 @@ closure could outlive the function.
 ```lua
 local t = {}
 local function inner()
-    print(t[1])   -- ESCAPES: t is captured
+   print(t[1])   -- ESCAPES: t is captured
 end
 ```
 
@@ -101,8 +101,8 @@ lu_byte escapes;    /* C.1: 1 if escape analysis marks as escaping */
 2. **EscapeDep struct** — for Rule 3 dependencies:
 ```c
 typedef struct EscapeDep {
-    short src_vidx;    /* vidx of table stored INTO */
-    short dep_vidx;    /* vidx of table stored AS VALUE */
+   short src_vidx;    /* vidx of table stored INTO */
+   short dep_vidx;    /* vidx of table stored AS VALUE */
 } EscapeDep;
 ```
 
@@ -182,15 +182,17 @@ make clean && make all MYCFLAGS="-g -O2"
 ## Test Results
 
 ### Basic test (test_escape.lua)
+```
 [escape-analysis] 't' -> NON-ESCAPING test_safe: purely local
 [escape-analysis] 't' -> ESCAPES test_return: Rule 1
 [escape-analysis] 't' -> ESCAPES test_capture: Rule 2
 [escape-analysis] 't' -> ESCAPES test_store: Rule 3
 [escape-analysis] 't' -> ESCAPES test_call: Rule 4
 [escape-analysis] 't' -> NON-ESCAPING test_whitelist: print/type safe
-
+```
 
 ### Comprehensive test (test_escape_full.lua)
+```
 [escape-analysis] 't' -> NON-ESCAPING test 1: purely local
 [escape-analysis] 't' -> ESCAPES test 2: return (Rule 1)
 [escape-analysis] 't' -> ESCAPES test 3: capture (Rule 2)
@@ -209,7 +211,7 @@ make clean && make all MYCFLAGS="-g -O2"
 [escape-analysis] 'safe' -> NON-ESCAPING test 13: not returned
 [escape-analysis] 'unsafe' -> ESCAPES test 13: returned (Rule 1)
 [escape-analysis] 'survivors' -> ESCAPES bench: returned (Rule 1)
-
+```
 
 All results are correct. Test 11 is a known acceptable limitation —
 `return {t}` creates an anonymous constructor containing `t`, but the
