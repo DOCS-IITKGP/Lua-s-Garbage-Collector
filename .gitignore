@@ -22,8 +22,9 @@ original/
 # Compiled test drivers
 Part B/sweeptest
 Part C/escapetest
+Part D/d3_modified
+Part D/d3_stock
 
 # Callgrind outputs (large, generated files)
 callgrind.out.*
 *.out
-
