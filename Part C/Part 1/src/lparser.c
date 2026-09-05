@@ -872,6 +872,33 @@ static void close_func (LexState *ls) {
           }
       }
   }
+    /* C.2: collect non-escaping table PCs and store in Proto */
+  {
+      int v;
+      int count = 0;
+      /* first pass: count non-escaping tables */
+      for (v = 0; v < fs->nactvar; v++) {
+          Vardesc *vd = getlocalvardesc(fs, v);
+          if (vd->vd.is_table && !vd->vd.escapes)
+              count++;
+      }
+      if (count > 0) {
+          f->arena_pcs = luaM_newvector(L, count, int);
+          f->num_arena_pcs = 0;
+          /* second pass: store the PCs */
+          for (v = 0; v < fs->nactvar; v++) {
+              Vardesc *vd = getlocalvardesc(fs, v);
+              if (vd->vd.is_table && !vd->vd.escapes) {
+                  f->arena_pcs[f->num_arena_pcs++] = vd->vd.newtable_pc;
+              }
+          }
+      }
+      else {
+          f->arena_pcs = NULL;
+          f->num_arena_pcs = 0;
+      }
+  }
+  
   luaK_ret(fs, luaY_nvarstack(fs), 0);  /* final return */
   leaveblock(fs);
   lua_assert(fs->bl == NULL);
@@ -988,6 +1015,12 @@ static void recfield (LexState *ls, ConsControl *cc) {
   tab = *cc->t;
   luaK_indexed(fs, &tab, &key);
   expr(ls, &val);
+  /* C.1: table-local used as record field value -> escapes */
+  if (val.k == VLOCAL) {
+      Vardesc *vd = getlocalvardesc(fs, val.u.var.vidx);
+      if (vd->vd.is_table)
+          vd->vd.escapes = 1;
+  }
   luaK_storevar(fs, &tab, &val);
   fs->freereg = reg;  /* free registers */
 }
@@ -1024,9 +1057,14 @@ static void lastlistfield (FuncState *fs, ConsControl *cc) {
 static void listfield (LexState *ls, ConsControl *cc) {
   /* listfield -> exp */
   expr(ls, &cc->v);
+  /* C.1: table-local used inside constructor -> escapes */
+  if (cc->v.k == VLOCAL) {
+      Vardesc *vd = getlocalvardesc(ls->fs, cc->v.u.var.vidx);
+      if (vd->vd.is_table)
+          vd->vd.escapes = 1;
+  }
   cc->tostore++;
 }
-
 
 static void field (LexState *ls, ConsControl *cc) {
   /* field -> listfield | recfield */
@@ -1093,6 +1131,7 @@ static void constructor (LexState *ls, expdesc *t) {
   lastlistfield(fs, &cc);
   luaK_settablesize(fs, pc, t->u.info, cc.na, cc.nh);
   ls->last_was_constructor = 1;  /* C.1: signal to localstat() that RHS was {} */
+  ls->last_constructor_pc = pc;  /* C.2: save bytecode position of OP_NEWTABLE */
 }
 
 /* }====================================================================== */
@@ -1188,13 +1227,24 @@ static void funcargs (LexState *ls, expdesc *f) {
       luaX_next(ls);
       if (ls->t.token == ')')  /* arg list is empty? */
         args.k = VVOID;
-      else {
-        explist(ls, &args);
-        /* C.1: save args info before luaK_exp2nextreg changes it */
+      else{
+        int nargs = explist(ls, &args);
+        /* C.1: mark table-local arguments for Rule 4 check */
+        if (nargs > 1) {
+          /* Multi-arg: intermediate args already shuffled by explist,
+                cannot identify which locals. Conservatively mark all. */
+          int v;
+          for (v = 0; v < fs->nactvar; v++) {
+            Vardesc *vd = getlocalvardesc(fs, v);
+            if (vd->vd.is_table && vd->vd.escapes == 0)
+              vd->vd.escapes = 2;  /* tentative; Rule 4 below */
+          }
+        }
+        /* Check last argument */
         if (args.k == VLOCAL) {
             Vardesc *vd = getlocalvardesc(fs, args.u.var.vidx);
-            if (vd->vd.is_table)
-                vd->vd.escapes = 2;  /* mark temporarily, Rule 4 checks below */
+            if (vd->vd.is_table && vd->vd.escapes == 0)
+                vd->vd.escapes = 2;
         }
         if (hasmultret(args.k))
           luaK_setmultret(fs, &args);
@@ -1985,8 +2035,10 @@ static void localstat (LexState *ls) {
     if (nvars == 1 && nexps == 1 && ls->last_was_constructor) {
       Vardesc *vd = getlocalvardesc(fs, fs->nactvar - 1);
       vd->vd.is_table = 1;
+      vd->vd.newtable_pc = ls->last_constructor_pc;  /* C.2: remember where OP_NEWTABLE is */
     }
     ls->last_was_constructor = 0;
+    
   }
   checktoclose(fs, toclose);
 }
@@ -2157,7 +2209,19 @@ static void retstat (LexState *ls) {
     nret = 0;  /* return no values */
   else {
     nret = explist(ls, &e);  /* optional return values */
-    /* C.1 Rule 1: if a table-local is returned, it escapes */
+    /* C.1 Rule 1: mark returned table-locals as escaping */
+    if (nret > 1) {
+        /* Multi-return: intermediate expressions were already shuffled
+           by explist's luaK_exp2nextreg, so we cannot identify which
+           locals they came from. Conservatively mark ALL table-locals. */
+        int v;
+        for (v = 0; v < fs->nactvar; v++) {
+            Vardesc *vd = getlocalvardesc(fs, v);
+            if (vd->vd.is_table)
+                vd->vd.escapes = 1;
+        }
+    }
+    /* Check last expression (works for single return too) */
     if (e.k == VLOCAL) {
         Vardesc *vd = getlocalvardesc(fs, e.u.var.vidx);
         if (vd->vd.is_table)

@@ -23,8 +23,11 @@ local t = {}
 return t        -- ESCAPES
 ```
 
-**Implementation:** Hook in `retstat()` after `explist()` returns. If the
-last expression is a `VLOCAL` that is a table-local, mark `escapes = 1`.
+**Implementation:** Hook in `retstat()` after `explist()` returns. For
+single returns, if the expression is a `VLOCAL` table-local, mark
+`escapes = 1`. For multi-value returns (`nret > 1`), intermediate
+expressions have already been shuffled by `explist()`, so we
+conservatively mark ALL table-locals as escaping.
 
 ### Rule 2: Capture Escape
 If the table is referenced inside a nested closure, it escapes — the
@@ -79,6 +82,26 @@ print(t)          -- NON-ESCAPING: print is whitelisted
    overwrites it), tentatively mark table-local arguments with `escapes = 2`,
    then confirm (`2 → 1`) or revert (`2 → 0`) based on whitelist check.
 
+For multi-argument calls (`nargs > 1`), intermediate arguments have already
+been shuffled by `explist()` and we cannot identify which locals they came
+from. We conservatively mark ALL table-locals with `escapes = 0` as
+tentatively escaping (`escapes = 2`), subject to the same whitelist
+confirm/revert logic. The `escapes == 0` guard ensures we never overwrite
+a table-local already confirmed escaping by another rule.
+
+### Constructor References
+A table-local used as a value inside a `{}` constructor escapes, because
+the constructor may itself be returned or stored.
+
+```lua
+local t = {}
+return {t}        -- ESCAPES: t is embedded in returned constructor
+```
+
+**Implementation:** Hooks in `listfield()` and `recfield()` — after
+parsing each field value expression, if it's a `VLOCAL` table-local,
+mark `escapes = 1`.
+
 ---
 
 ## Files Modified (3 files)
@@ -112,16 +135,18 @@ EscapeDep escape_deps[MAX_ESCAPE_DEPS];  /* C.1: Rule 3 deps */
 int num_escape_deps;                      /* C.1: dep count */
 ```
 
-### lparser.c (7 hooks)
+### lparser.c (hooks)
 
 | Hook | Location | Purpose |
 |------|----------|---------|
 | 0a | `open_func()` | Initialize `num_escape_deps = 0` |
 | 0b | `localstat()` end | Initialize `is_table`/`escapes` fields, tag constructor vars |
-| 1 | `constructor()` end | Set `last_was_constructor = 1` flag |
-| 2 | `retstat()` after `explist` | Rule 1: mark returned table-locals |
+| 1a | `constructor()` end | Set `last_was_constructor = 1` flag |
+| 1b | `listfield()` after `expr` | Mark table-local list field values as escaping |
+| 1c | `recfield()` after `expr` | Mark table-local record field values as escaping |
+| 2 | `retstat()` after `explist` | Rule 1: mark returned table-locals (single and multi) |
 | 3 | `singlevaraux()` at `markupval` | Rule 2: mark captured table-locals |
-| 4 | `singlevar()` + `funcargs()` | Rule 4: whitelist check with tentative marking |
+| 4 | `singlevar()` + `funcargs()` | Rule 4: whitelist check with tentative marking (single and multi-arg) |
 | 5 | `restassign()` before `storevar` | Rule 3: record deps or immediate escape |
 | 6 | `close_func()` before `luaK_ret` | Fixed-point propagation + debug output |
 
@@ -193,32 +218,29 @@ make clean && make all MYCFLAGS="-g -O2"
 
 ### Comprehensive test (test_escape_full.lua)
 ```
-[escape-analysis] 't' -> NON-ESCAPING test 1: purely local
-[escape-analysis] 't' -> ESCAPES test 2: return (Rule 1)
-[escape-analysis] 't' -> ESCAPES test 3: capture (Rule 2)
-[escape-analysis] 't' -> ESCAPES test 4: store global (Rule 3)
-[escape-analysis] 't' -> ESCAPES test 5: unknown call (Rule 4)
-[escape-analysis] 't' -> NON-ESCAPING test 6: whitelisted calls
-[escape-analysis] 't' -> NON-ESCAPING test 7: local computation
-[escape-analysis] 'outer' -> ESCAPES test 8: returned (Rule 1)
-[escape-analysis] 'inner' -> ESCAPES test 8: Rule 3 chain propagated
-[escape-analysis] 't' -> ESCAPES test 9: table.insert (Rule 4)
-[escape-analysis] 'list' -> NON-ESCAPING test 9: list not passed anywhere
-[escape-analysis] 't' -> NON-ESCAPING test 10: length operator only
-[escape-analysis] 't' -> NON-ESCAPING test 11: anonymous constructor (limitation)
-[escape-analysis] 'a' -> NON-ESCAPING test 12: multi-local safe
-[escape-analysis] 'b' -> NON-ESCAPING test 12: multi-local safe
-[escape-analysis] 'safe' -> NON-ESCAPING test 13: not returned
-[escape-analysis] 'unsafe' -> ESCAPES test 13: returned (Rule 1)
-[escape-analysis] 'survivors' -> ESCAPES bench: returned (Rule 1)
+[escape-analysis] 't' -> NON-ESCAPING         test 1: purely local
+[escape-analysis] 't' -> ESCAPES              test 2: return (Rule 1)
+[escape-analysis] 't' -> ESCAPES              test 3: capture (Rule 2)
+[escape-analysis] 't' -> ESCAPES              test 4: store global (Rule 3)
+[escape-analysis] 't' -> ESCAPES              test 5: unknown call (Rule 4)
+[escape-analysis] 't' -> NON-ESCAPING         test 6: whitelisted calls
+[escape-analysis] 't' -> NON-ESCAPING         test 7: local computation
+[escape-analysis] 'outer' -> ESCAPES          test 8: returned (Rule 1)
+[escape-analysis] 'inner' -> ESCAPES          test 8: Rule 3 chain propagated
+[escape-analysis] 't' -> ESCAPES              test 9: table.insert (Rule 4)
+[escape-analysis] 'list' -> ESCAPES           test 9: list passed to table.insert (Rule 4)
+[escape-analysis] 't' -> NON-ESCAPING         test 10: length operator only
+[escape-analysis] 't' -> ESCAPES              test 11: used inside returned constructor
+[escape-analysis] 'a' -> NON-ESCAPING         test 12: multi-local safe
+[escape-analysis] 'b' -> NON-ESCAPING         test 12: multi-local safe
+[escape-analysis] 'safe' -> NON-ESCAPING      test 13: not returned
+[escape-analysis] 'unsafe' -> ESCAPES         test 13: returned (Rule 1)
+[escape-analysis] 'survivors' -> ESCAPES      bench: returned (Rule 1)
 ```
 
-All results are correct. Test 11 is a known acceptable limitation —
-`return {t}` creates an anonymous constructor containing `t`, but the
-analyzer doesn't track references through anonymous table literals.
-This is a false negative (missed escape), which is the safe direction:
-the table would go to the GC heap instead of the arena, preserving
-correctness.
+All results are correct. Every escaping table is caught, and every
+non-escaping table is provably safe. The analyzer never fails in the
+unsafe direction (promoting a table that actually escapes).
 
 ### Testbench observation
 In the actual testbench, `obj` is stored into `survivors` conditionally
@@ -233,13 +255,14 @@ important finding for Part D benchmarking.
 
 ## Known Limitations
 
-1. **Single return expression:** Only the last expression in a multi-value
-   return is checked. `return a, t` would miss `a` if it's a table-local.
-2. **Single argument:** Only the last argument in a multi-argument call is
-   checked via the tentative marking strategy.
-3. **Anonymous constructors:** `return {t}` doesn't mark `t` as escaping
-   because the analyzer doesn't track references through constructor literals.
-4. **Loop-scoped variables:** The debug output in `close_func()` cannot
+1. **Multi-return / multi-argument conservatism:** For `return a, b` or
+   `func(a, b)` with more than one expression, the analyzer cannot track
+   which locals correspond to which intermediate registers after `explist()`
+   shuffles them. It conservatively marks ALL table-locals as escaping
+   (for returns) or tentatively escaping (for calls, subject to whitelist
+   revert). This is sound but may cause missed optimizations in functions
+   with many table-locals and multi-value returns or calls.
+2. **Loop-scoped variables:** The debug output in `close_func()` cannot
    print escape verdicts for variables in inner blocks (like loop bodies)
    because `leaveblock()` has already reduced `nactvar` by then. The
    analysis itself still runs correctly during parsing.

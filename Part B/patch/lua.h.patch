@@ -5,7 +5,7 @@
  
  LUA_API int (lua_gc) (lua_State *L, int what, ...);
 -
-+void setsweepstep (lua_State *L, int n);
++LUA_API void setsweepstep (lua_State *L, int n);
  
  /*
  ** miscellaneous functions

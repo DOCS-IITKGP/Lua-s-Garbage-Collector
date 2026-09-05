@@ -1,4 +1,4 @@
-# Part B: Sweep Granularity — Making It Tunable
+# Part B: Sweep Granularity: Making It Tunable
 
 ## Overview
 
@@ -14,20 +14,20 @@ the `#define` with a `static int` variable and exposing a setter function.
 
 During incremental GC, the sweep phase is broken into small steps. Each step
 calls `sweepstep()`, which iterates over allocated objects, freeing dead ones
-and clearing marks on live ones. `GCSWEEPMAX` is the loop bound — it controls
+and clearing marks on live ones. `GCSWEEPMAX` is the loop bound, i.e it controls
 how many objects are processed per step before yielding back to the program.
 
 - Small values (e.g. 5): short pauses, more frequent steps, higher total overhead
 - Large values (e.g. 200): longer pauses, fewer steps, lower total overhead
 
 This is a classic throughput vs latency tradeoff. The optimal value depends on
-the workload, which is why making it tunable is useful.
+the workload, which is why we are going to make it tunable. 
 
 ## Files Modified
 
 ### lgc.c (2 changes)
 
-**Change 1 — Line 34:** Replaced the compile-time constant with a runtime variable.
+**Change 1 => Line 34:** Replaced the compile-time constant with a runtime variable.
 
 ```c
 // BEFORE
@@ -41,7 +41,7 @@ The `static` keyword keeps the variable file-scoped (only visible inside lgc.c),
 preserving encapsulation. The default value of 20 is unchanged, so unpatched
 behavior is identical.
 
-**Change 2 — End of file:** Added a setter function.
+**Change 2 => End of file:** Added a setter function.
 
 ```c
 void setsweepstep (lua_State *L, int n) {
@@ -50,7 +50,7 @@ void setsweepstep (lua_State *L, int n) {
 }
 ```
 
-Values <= 0 reset to the default. The `(void)L` suppresses the unused-parameter
+The `(void)L` suppresses the unused-parameter
 warning while keeping the lua_State* argument to follow Lua API conventions.
 
 ### lua.h (1 change)
@@ -61,7 +61,7 @@ warning while keeping the lua_State* argument to follow Lua API conventions.
 void setsweepstep (lua_State *L, int n);
 ```
 
-## API
+## API Used
 
 ```c
 void setsweepstep(lua_State *L, int n);
@@ -78,7 +78,7 @@ void setsweepstep(lua_State *L, int n);
 lua_State *L = luaL_newstate();
 luaL_openlibs(L);
 
-lua_gc(L, LUA_GCINC, 0, 0, 0);   // enable incremental GC
+lua_gc(L, LUA_GCINC, 0, 0, 0);    // enable incremental GC
 setsweepstep(L, 50);              // sweep 50 objects per step
 
 luaL_dofile(L, "testbench.lua");
@@ -109,15 +109,15 @@ gcc -g -O2 \
 ```
 
 All runs should print "Testbench completed successfully". The behavioral output
-is identical across values — only the internal GC step distribution changes,
+is identical across values, i.e only the internal GC step distribution changes,
 which is measured in Part D using callgrind.
 
 ## Design Rationale
 
 - **Static variable** keeps the change local to lgc.c with no global state leakage.
 - **Default value unchanged** so the patch is backward-compatible.
-- **lua_State* parameter** follows Lua API conventions for future per-state tuning.
-- **Minimal diff** — only 2 files changed, 3 lines modified/added in lgc.c,
+- lua_State parameter follows Lua API conventions for future per-state tuning.
+- **Minimal diff**: only 2 files changed, 3 lines modified/added in lgc.c,
   1 line added in lua.h. The rest of the GC code is untouched.
 
 ## Deliverables

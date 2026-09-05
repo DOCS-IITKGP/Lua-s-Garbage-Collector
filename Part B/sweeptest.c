@@ -4,8 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern void setsweepstep(lua_State *L, int n);
-
 int main(int argc, char **argv) {
     int sweep_val = 20;
 

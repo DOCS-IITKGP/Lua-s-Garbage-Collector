@@ -1805,7 +1805,7 @@ void luaC_fullgc (lua_State *L, int isemergency) {
 
 
 /* Part B: make sweep granularity tunable at runtime */
-void setsweepstep (lua_State *L, int n) {
+LUA_API void setsweepstep (lua_State *L, int n) {
     (void)L;
     GCSWEEPMAX = (n <= 0) ? 20 : n;
 }
