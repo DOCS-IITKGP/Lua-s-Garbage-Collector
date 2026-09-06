@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/llex.h	2025-12-15 10:44:39.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/llex.h	2026-08-28 16:49:11.296450400 +0000
+--- original/lua-5.5.0/src/llex.h
++++ lua5.5-student-src/lua-5.5.0/src/llex.h
 @@ -77,6 +77,9 @@
    TString *envn;  /* environment variable name */
    TString *brkn;  /* "break" name (used as a label) */

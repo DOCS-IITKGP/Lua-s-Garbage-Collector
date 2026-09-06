@@ -172,6 +172,16 @@ typedef struct EscapeDep {
 
 #define MAX_ESCAPE_DEPS 256
 
+/* C.2: buffer to preserve table-local info across block scopes */
+typedef struct ArenaCandidate {
+    int vidx;           /* original variable index */
+    int newtable_pc;    /* PC of OP_NEWTABLE */
+    lu_byte escapes;    /* escape status when removed from scope */
+    TString *name;      /* variable name (for debug output) */
+} ArenaCandidate;
+
+#define MAX_ARENA_CANDIDATES 256
+
 /* state needed to generate code for a given function */
 typedef struct FuncState {
   Proto *f;  /* current function header */
@@ -195,6 +205,8 @@ typedef struct FuncState {
   lu_byte needclose;  /* function needs to close upvalues when returning */
   EscapeDep escape_deps[MAX_ESCAPE_DEPS];   /* C.1: Rule 3 store-escape deps */
   int num_escape_deps;                      /* C.1: number of deps recorded */
+  ArenaCandidate arena_candidates[MAX_ARENA_CANDIDATES]; /* C.2: saved table-locals */
+  int num_arena_candidates;                 /* C.2: count of saved candidates */
 } FuncState;
 
 

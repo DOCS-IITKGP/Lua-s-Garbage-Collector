@@ -18,6 +18,7 @@
 #include "ldo.h"
 #include "lgc.h"
 #include "lmem.h"
+#include "ltable.h"  /* C.2-fix: for luaH_free_internals */
 #include "lobject.h"
 #include "lstate.h"
 
@@ -221,6 +222,9 @@ FrameArena *luaM_arena_new (lua_State *L) {
     arena->buf = cast(char *, luaM_malloc_(L, ARENA_SIZE, 0));
     arena->used = 0;
     arena->capacity = ARENA_SIZE;
+    arena->tables = NULL;       /* C.2-fix */
+    arena->num_tables = 0;
+    arena->max_tables = 0;
     return arena;
 }
 
@@ -236,8 +240,31 @@ void *luaM_arena_alloc (FrameArena *arena, size_t size) {
     }
 }
 
+/* C.2-fix: register an arena-allocated table for cleanup on free */
+void luaM_arena_register (lua_State *L, FrameArena *arena, Table *t) {
+    if (arena->num_tables >= arena->max_tables) {
+        int newmax = (arena->max_tables == 0) ? 16 : arena->max_tables * 2;
+        Table **newarr = cast(Table **, luaM_realloc_(L, arena->tables,
+            cast_sizet(arena->max_tables) * sizeof(Table *),
+            cast_sizet(newmax) * sizeof(Table *)));
+        arena->tables = newarr;
+        arena->max_tables = newmax;
+    }
+    arena->tables[arena->num_tables++] = t;
+}
+
 void luaM_arena_free (lua_State *L, FrameArena *arena) {
     if (arena != NULL) {
+        /* C.2-fix: free internal allocations of arena-allocated tables */
+        {
+            int i;
+            for (i = 0; i < arena->num_tables; i++) {
+                luaH_free_internals(L, arena->tables[i]);
+            }
+        }
+        if (arena->tables != NULL)
+            luaM_free_(L, arena->tables,
+                       cast_sizet(arena->max_tables) * sizeof(Table *));
         luaM_free_(L, arena->buf, arena->capacity);
         luaM_free_(L, arena, sizeof(FrameArena));
     }

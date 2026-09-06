@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/lobject.h	2025-12-15 10:44:40.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lobject.h	2026-08-28 17:07:15.317176400 +0000
+--- original/lua-5.5.0/src/lobject.h
++++ lua5.5-student-src/lua-5.5.0/src/lobject.h
 @@ -622,6 +622,8 @@
    LocVar *locvars;  /* information about local variables (debug information) */
    TString  *source;  /* used for debug information */

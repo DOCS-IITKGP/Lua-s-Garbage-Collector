@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/ldo.c	2025-12-15 10:44:39.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/ldo.c	2026-08-28 17:44:54.049450500 +0000
+--- original/lua-5.5.0/src/ldo.c
++++ lua5.5-student-src/lua-5.5.0/src/ldo.c
 @@ -611,6 +611,12 @@
    /* function cannot be in any of these cases when returning */
    lua_assert(!(ci->callstatus &

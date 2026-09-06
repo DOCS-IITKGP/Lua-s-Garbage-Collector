@@ -1,0 +1,26 @@
+=== D.3 CLEAN RESULTS ===
+
+--- Part 1: Compile-time overhead ---
+Stock total:  323380923
+Arena total:  323622091
+Overhead:     .0745%
+
+--- Part 2: GC benefit across (m,n) sets ---
+Format: total_instrs | lgc.c_instrs (GC%) | luaC_newobj_instrs
+
+m=1000, n=100:
+  Stock: 323381928 total | 282731188 GC (87.42%) | newobj=4205523
+  Arena: 323621895 total | 282898236 GC (87.41%) | newobj=4205523
+
+m=100, n=100:
+  Stock: 32691923 total | 26791287 GC (81.95%) | newobj=425523
+  Arena: 32721288 total | 26798103 GC (81.89%) | newobj=425523
+
+m=500, n=100:
+  Stock: 161744926 total | 139735727 GC (86.39%) | newobj=2105523
+  Arena: 161878007 total | 139703138 GC (86.30%) | newobj=2105523
+
+m=5000, n=100:
+  Stock: 1618235440 total | 1432633381 GC (88.53%) | newobj=21005523
+  Arena: 1619004014 total | 1431451244 GC (88.41%) | newobj=21005523
+

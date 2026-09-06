@@ -1,6 +1,6 @@
---- original/lua-5.5.0/src/ltable.c	2025-12-15 10:44:40.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/ltable.c	2026-08-28 17:23:35.306663000 +0000
-@@ -807,6 +807,24 @@
+--- original/lua-5.5.0/src/ltable.c
++++ lua5.5-student-src/lua-5.5.0/src/ltable.c
+@@ -807,7 +807,32 @@
    return t;
  }
  
@@ -20,8 +20,16 @@
 +  t->array = NULL;
 +  t->asize = 0;
 +  setnodevector(L, t, 0);
++  luaM_arena_register(L, arena, t);  /* C.2 */
 +  return t;
 +}
  
++
++/* C.2: free array and hash nodes without freeing the Table struct */
++void luaH_free_internals (lua_State *L, Table *t) {
++  freehash(L, t);
++  resizearray(L, t, t->asize, 0);
++}
  lu_mem luaH_size (Table *t) {
    lu_mem sz = cast(lu_mem, sizeof(Table)) + concretesize(t->asize);
+   if (!isdummy(t))

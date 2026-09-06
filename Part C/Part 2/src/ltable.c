@@ -823,9 +823,16 @@ Table *luaH_new_arena (lua_State *L, FrameArena *arena) {
   t->array = NULL;
   t->asize = 0;
   setnodevector(L, t, 0);
+  luaM_arena_register(L, arena, t);  /* C.2 */
   return t;
 }
 
+
+/* C.2: free array and hash nodes without freeing the Table struct */
+void luaH_free_internals (lua_State *L, Table *t) {
+  freehash(L, t);
+  resizearray(L, t, t->asize, 0);
+}
 lu_mem luaH_size (Table *t) {
   lu_mem sz = cast(lu_mem, sizeof(Table)) + concretesize(t->asize);
   if (!isdummy(t))

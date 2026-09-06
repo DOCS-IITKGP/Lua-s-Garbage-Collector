@@ -760,6 +760,20 @@ static void leaveblock (FuncState *fs) {
   if (bl->previous && bl->upval)  /* need a 'close'? */
     luaK_codeABC(fs, OP_CLOSE, stklevel, 0, 0);
   fs->freereg = stklevel;  /* free registers */
+  /* C.2: save table-local info before removevars destroys it */
+  {
+      int v;
+      for (v = bl->nactvar; v < fs->nactvar; v++) {
+          Vardesc *vd = getlocalvardesc(fs, v);
+          if (vd->vd.is_table && fs->num_arena_candidates < MAX_ARENA_CANDIDATES) {
+              ArenaCandidate *ac = &fs->arena_candidates[fs->num_arena_candidates++];
+              ac->vidx = v;
+              ac->newtable_pc = vd->vd.newtable_pc;
+              ac->escapes = vd->vd.escapes;
+              ac->name = vd->vd.name;
+          }
+      }
+  }
   removevars(fs, bl->nactvar);  /* remove block locals */
   lua_assert(bl->nactvar == fs->nactvar);  /* back to level on entry */
   if (bl->isloop == 2)  /* has to fix pending breaks? */
@@ -826,6 +840,7 @@ static void open_func (LexState *ls, FuncState *fs, BlockCnt *bl) {
   fs->nactvar = 0;
   fs->needclose = 0;
   fs->num_escape_deps = 0;  /* C.1: no Rule 3 store-escape deps yet */
+  fs->num_arena_candidates = 0;  /* C.2: no saved table-locals yet */
   fs->firstlocal = ls->dyd->actvar.n;
   fs->firstlabel = ls->dyd->label.n;
   fs->bl = NULL;
@@ -843,7 +858,8 @@ static void close_func (LexState *ls) {
   lua_State *L = ls->L;
   FuncState *fs = ls->fs;
   Proto *f = fs->f;
-  /* C.1: fixed-point propagation for Rule 3 store-escape dependencies */
+  /* C.1: fixed-point propagation for Rule 3 store-escape dependencies
+     C.2: propagate across both live vars (nactvar) and saved buffer */
   {
       int changed = 1;
       while (changed) {
@@ -851,11 +867,38 @@ static void close_func (LexState *ls) {
           changed = 0;
           for (d = 0; d < fs->num_escape_deps; d++) {
               EscapeDep *dep = &fs->escape_deps[d];
-              Vardesc *src = getlocalvardesc(fs, dep->src_vidx);
-              Vardesc *dst = getlocalvardesc(fs, dep->dep_vidx);
-              if (src->vd.escapes && !dst->vd.escapes) {
-                  dst->vd.escapes = 1;
-                  changed = 1;
+              int src_escapes = 0;
+              /* look up src escape status: live vars first, then buffer */
+              if (dep->src_vidx < fs->nactvar) {
+                  src_escapes = getlocalvardesc(fs, dep->src_vidx)->vd.escapes;
+              } else {
+                  int c;
+                  for (c = 0; c < fs->num_arena_candidates; c++) {
+                      if (fs->arena_candidates[c].vidx == dep->src_vidx) {
+                          src_escapes = fs->arena_candidates[c].escapes;
+                          break;
+                      }
+                  }
+              }
+              if (src_escapes) {
+                  /* propagate to dep target: live vars first, then buffer */
+                  if (dep->dep_vidx < fs->nactvar) {
+                      Vardesc *dst = getlocalvardesc(fs, dep->dep_vidx);
+                      if (!dst->vd.escapes) {
+                          dst->vd.escapes = 1;
+                          changed = 1;
+                      }
+                  } else {
+                      int c;
+                      for (c = 0; c < fs->num_arena_candidates; c++) {
+                          if (fs->arena_candidates[c].vidx == dep->dep_vidx
+                              && !fs->arena_candidates[c].escapes) {
+                              fs->arena_candidates[c].escapes = 1;
+                              changed = 1;
+                              break;
+                          }
+                      }
+                  }
               }
           }
       }
@@ -863,6 +906,7 @@ static void close_func (LexState *ls) {
   /* C.1: debug output — print escape analysis results */
   {
       int v;
+      /* function-level table-locals (still in nactvar) */
       for (v = 0; v < fs->nactvar; v++) {
           Vardesc *vd = getlocalvardesc(fs, v);
           if (vd->vd.is_table) {
@@ -871,26 +915,43 @@ static void close_func (LexState *ls) {
                      vd->vd.escapes ? "ESCAPES" : "NON-ESCAPING");
           }
       }
+      /* block-scoped table-locals (saved in buffer) */
+      for (v = 0; v < fs->num_arena_candidates; v++) {
+          ArenaCandidate *ac = &fs->arena_candidates[v];
+          printf("[escape-analysis] '%s' -> %s\n",
+                 getstr(ac->name),
+                 ac->escapes ? "ESCAPES" : "NON-ESCAPING");
+      }
   }
-    /* C.2: collect non-escaping table PCs and store in Proto */
+  /* C.2: collect non-escaping table PCs from live vars + buffer */
   {
       int v;
       int count = 0;
-      /* first pass: count non-escaping tables */
+      /* count from live vars */
       for (v = 0; v < fs->nactvar; v++) {
           Vardesc *vd = getlocalvardesc(fs, v);
           if (vd->vd.is_table && !vd->vd.escapes)
               count++;
       }
+      /* count from buffer */
+      for (v = 0; v < fs->num_arena_candidates; v++) {
+          if (!fs->arena_candidates[v].escapes)
+              count++;
+      }
       if (count > 0) {
           f->arena_pcs = luaM_newvector(L, count, int);
           f->num_arena_pcs = 0;
-          /* second pass: store the PCs */
+          /* collect from live vars */
           for (v = 0; v < fs->nactvar; v++) {
               Vardesc *vd = getlocalvardesc(fs, v);
-              if (vd->vd.is_table && !vd->vd.escapes) {
+              if (vd->vd.is_table && !vd->vd.escapes)
                   f->arena_pcs[f->num_arena_pcs++] = vd->vd.newtable_pc;
-              }
+          }
+          /* collect from buffer */
+          for (v = 0; v < fs->num_arena_candidates; v++) {
+              if (!fs->arena_candidates[v].escapes)
+                  f->arena_pcs[f->num_arena_pcs++] =
+                      fs->arena_candidates[v].newtable_pc;
           }
       }
       else {

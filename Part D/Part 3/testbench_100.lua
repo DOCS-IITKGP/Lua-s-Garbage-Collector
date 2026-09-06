@@ -8,7 +8,7 @@ function test()
     --                 the other N-1 are garbage the instant the iteration
     --                 ends. 
     local m = 100
-    local n = 1000
+    local n = 100
     local survive_every = 100
 
     local count = 0

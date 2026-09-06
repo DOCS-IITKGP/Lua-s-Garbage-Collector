@@ -1424,7 +1424,7 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         {
             int arena_alloc = 0;
             if (ci->arena != NULL && cl->p->num_arena_pcs > 0) {
-                int thispc = cast_int(pc - 1 - cl->p->code);  /* PC of this instruction */
+                int thispc = cast_int(pc - 2 - cl->p->code);  /* PC of this instruction */
                 int ap;
                 for (ap = 0; ap < cl->p->num_arena_pcs; ap++) {
                     if (cl->p->arena_pcs[ap] == thispc) {
@@ -1433,8 +1433,18 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
                     }
                 }
             }
-            if (arena_alloc)
+            if (arena_alloc) {
+                /* C.2: reset arena between iterations — previous
+                   loop-scoped tables are dead, reclaim their space */
+                if (ci->arena->num_tables > 0) {
+                    int at;
+                    for (at = 0; at < ci->arena->num_tables; at++)
+                        luaH_free_internals(L, ci->arena->tables[at]);
+                    ci->arena->num_tables = 0;
+                    ci->arena->used = 0;
+                }
                 t = luaH_new_arena(L, ci->arena);  /* C.2: arena allocation */
+            }
             else
                 t = luaH_new(L);  /* normal GC heap allocation */
         }
@@ -1811,6 +1821,11 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         }
         else {  /* do the 'poscall' here */
           int nres = get_nresults(ci->callstatus);
+          /* C.2: free arena on fast-path return */
+          if (ci->arena != NULL) {
+              luaM_arena_free(L, ci->arena);
+              ci->arena = NULL;
+          }
           L->ci = ci->previous;  /* back to caller */
           L->top.p = base - 1;
           for (; l_unlikely(nres > 0); nres--)
@@ -1828,6 +1843,11 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
         }
         else {  /* do the 'poscall' here */
           int nres = get_nresults(ci->callstatus);
+          /* C.2: free arena on fast-path return */
+          if (ci->arena != NULL) {
+              luaM_arena_free(L, ci->arena);
+              ci->arena = NULL;
+          }
           L->ci = ci->previous;  /* back to caller */
           if (nres == 0)
             L->top.p = base - 1;  /* asked for no results */

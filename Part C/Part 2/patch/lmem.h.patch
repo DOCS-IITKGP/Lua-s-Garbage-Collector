@@ -1,6 +1,6 @@
---- original/lua-5.5.0/src/lmem.h	2025-12-15 10:44:39.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lmem.h	2026-08-28 17:14:34.930977200 +0000
-@@ -92,5 +92,17 @@
+--- original/lua-5.5.0/src/lmem.h
++++ lua5.5-student-src/lua-5.5.0/src/lmem.h
+@@ -92,5 +92,21 @@
                                      int final_n, unsigned size_elem);
  LUAI_FUNC void *luaM_malloc_ (lua_State *L, size_t size, int tag);
  
@@ -12,10 +12,14 @@
 +    char *buf;        /* the memory block */
 +    size_t used;      /* bytes used so far */
 +    size_t capacity;  /* total bytes available */
++    struct Table **tables;  /* C.2-fix: tracked arena tables for cleanup */
++    int num_tables;         /* C.2-fix: count of tracked tables */
++    int max_tables;         /* C.2-fix: capacity of tables array */
 +} FrameArena;
  
 +LUAI_FUNC FrameArena *luaM_arena_new(lua_State *L);
 +LUAI_FUNC void *luaM_arena_alloc(FrameArena *arena, size_t size);
 +LUAI_FUNC void luaM_arena_free(lua_State *L, FrameArena *arena);
++LUAI_FUNC void luaM_arena_register(lua_State *L, FrameArena *arena, struct Table *t);
 +
 +#endif

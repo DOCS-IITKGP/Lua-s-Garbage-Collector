@@ -1,0 +1,12 @@
+=== GCSWEEPMAX = 5 ===
+  Total: 340179545  sweeplist: 5470214  freeobj: 3606085  luaC_step: 1894752
+
+=== GCSWEEPMAX = 20 ===
+  Total: 337023560  sweeplist: 4292664  freeobj: 3606085  luaC_step: 1329752
+
+=== GCSWEEPMAX = 50 ===
+  Total: 336394501  sweeplist: 4057214  freeobj: 3606085  luaC_step: 1217240
+
+=== GCSWEEPMAX = 200 ===
+  Total: 336084715  sweeplist: 3939389  freeobj: 3606085  luaC_step: 1163708
+

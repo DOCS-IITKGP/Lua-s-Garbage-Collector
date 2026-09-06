@@ -1,6 +1,14 @@
---- original/lua-5.5.0/src/lmem.c	2025-12-15 10:44:39.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lmem.c	2026-08-28 17:11:04.012717400 +0000
-@@ -213,3 +213,32 @@
+--- original/lua-5.5.0/src/lmem.c
++++ lua5.5-student-src/lua-5.5.0/src/lmem.c
+@@ -18,6 +18,7 @@
+ #include "ldo.h"
+ #include "lgc.h"
+ #include "lmem.h"
++#include "ltable.h"  /* C.2-fix: for luaH_free_internals */
+ #include "lobject.h"
+ #include "lstate.h"
+ 
+@@ -213,3 +214,58 @@
      return newblock;
    }
  }
@@ -12,6 +20,9 @@
 +    arena->buf = cast(char *, luaM_malloc_(L, ARENA_SIZE, 0));
 +    arena->used = 0;
 +    arena->capacity = ARENA_SIZE;
++    arena->tables = NULL;       /* C.2-fix */
++    arena->num_tables = 0;
++    arena->max_tables = 0;
 +    return arena;
 +}
 +
@@ -27,8 +38,31 @@
 +    }
 +}
 +
++/* C.2-fix: register an arena-allocated table for cleanup on free */
++void luaM_arena_register (lua_State *L, FrameArena *arena, Table *t) {
++    if (arena->num_tables >= arena->max_tables) {
++        int newmax = (arena->max_tables == 0) ? 16 : arena->max_tables * 2;
++        Table **newarr = cast(Table **, luaM_realloc_(L, arena->tables,
++            cast_sizet(arena->max_tables) * sizeof(Table *),
++            cast_sizet(newmax) * sizeof(Table *)));
++        arena->tables = newarr;
++        arena->max_tables = newmax;
++    }
++    arena->tables[arena->num_tables++] = t;
++}
++
 +void luaM_arena_free (lua_State *L, FrameArena *arena) {
 +    if (arena != NULL) {
++        /* C.2-fix: free internal allocations of arena-allocated tables */
++        {
++            int i;
++            for (i = 0; i < arena->num_tables; i++) {
++                luaH_free_internals(L, arena->tables[i]);
++            }
++        }
++        if (arena->tables != NULL)
++            luaM_free_(L, arena->tables,
++                       cast_sizet(arena->max_tables) * sizeof(Table *));
 +        luaM_free_(L, arena->buf, arena->capacity);
 +        luaM_free_(L, arena, sizeof(FrameArena));
 +    }

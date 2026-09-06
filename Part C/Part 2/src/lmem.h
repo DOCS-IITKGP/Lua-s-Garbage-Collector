@@ -99,10 +99,14 @@ typedef struct FrameArena {
     char *buf;        /* the memory block */
     size_t used;      /* bytes used so far */
     size_t capacity;  /* total bytes available */
+    struct Table **tables;  /* C.2-fix: tracked arena tables for cleanup */
+    int num_tables;         /* C.2-fix: count of tracked tables */
+    int max_tables;         /* C.2-fix: capacity of tables array */
 } FrameArena;
 
 LUAI_FUNC FrameArena *luaM_arena_new(lua_State *L);
 LUAI_FUNC void *luaM_arena_alloc(FrameArena *arena, size_t size);
 LUAI_FUNC void luaM_arena_free(lua_State *L, FrameArena *arena);
+LUAI_FUNC void luaM_arena_register(lua_State *L, FrameArena *arena, struct Table *t);
 
 #endif

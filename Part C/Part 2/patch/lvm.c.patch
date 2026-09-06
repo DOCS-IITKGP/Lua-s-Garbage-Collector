@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/lvm.c	2025-12-15 10:44:40.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lvm.c	2026-08-28 17:34:19.937523400 +0000
+--- original/lua-5.5.0/src/lvm.c
++++ lua5.5-student-src/lua-5.5.0/src/lvm.c
 @@ -26,6 +26,7 @@
  #include "lobject.h"
  #include "lopcodes.h"
@@ -8,7 +8,7 @@
  #include "lstring.h"
  #include "ltable.h"
  #include "ltm.h"
-@@ -1418,7 +1419,25 @@
+@@ -1418,7 +1419,35 @@
          }
          pc++;  /* skip extra argument */
          L->top.p = ra + 1;  /* correct top in case of emergency GC */
@@ -18,7 +18,7 @@
 +        {
 +            int arena_alloc = 0;
 +            if (ci->arena != NULL && cl->p->num_arena_pcs > 0) {
-+                int thispc = cast_int(pc - 1 - cl->p->code);  /* PC of this instruction */
++                int thispc = cast_int(pc - 2 - cl->p->code);  /* PC of this instruction */
 +                int ap;
 +                for (ap = 0; ap < cl->p->num_arena_pcs; ap++) {
 +                    if (cl->p->arena_pcs[ap] == thispc) {
@@ -27,11 +27,45 @@
 +                    }
 +                }
 +            }
-+            if (arena_alloc)
++            if (arena_alloc) {
++                /* C.2: reset arena between iterations — previous
++                   loop-scoped tables are dead, reclaim their space */
++                if (ci->arena->num_tables > 0) {
++                    int at;
++                    for (at = 0; at < ci->arena->num_tables; at++)
++                        luaH_free_internals(L, ci->arena->tables[at]);
++                    ci->arena->num_tables = 0;
++                    ci->arena->used = 0;
++                }
 +                t = luaH_new_arena(L, ci->arena);  /* C.2: arena allocation */
++            }
 +            else
 +                t = luaH_new(L);  /* normal GC heap allocation */
 +        }
          sethvalue2s(L, ra, t);
          if (b != 0 || c != 0)
            luaH_resize(L, t, c, b);  /* idem */
+@@ -1792,6 +1821,11 @@
+         }
+         else {  /* do the 'poscall' here */
+           int nres = get_nresults(ci->callstatus);
++          /* C.2: free arena on fast-path return */
++          if (ci->arena != NULL) {
++              luaM_arena_free(L, ci->arena);
++              ci->arena = NULL;
++          }
+           L->ci = ci->previous;  /* back to caller */
+           L->top.p = base - 1;
+           for (; l_unlikely(nres > 0); nres--)
+@@ -1809,6 +1843,11 @@
+         }
+         else {  /* do the 'poscall' here */
+           int nres = get_nresults(ci->callstatus);
++          /* C.2: free arena on fast-path return */
++          if (ci->arena != NULL) {
++              luaM_arena_free(L, ci->arena);
++              ci->arena = NULL;
++          }
+           L->ci = ci->previous;  /* back to caller */
+           if (nres == 0)
+             L->top.p = base - 1;  /* asked for no results */

@@ -5,7 +5,7 @@
 This benchmark measures the effect of the tunable GCSWEEPMAX parameter
 introduced in Part B. GCSWEEPMAX controls how many objects the incremental
 GC's sweeper processes per step. We test four values: 5, 20 (default), 50,
-and 200.
+and 200, on the testbench from Appendix A (m=1000, n=100).
 
 ---
 
@@ -15,41 +15,29 @@ and 200.
 
 | GCSWEEPMAX | Total Instructions | Δ from default | % change |
 |------------|-------------------|----------------|----------|
-| 5          | 3,397,534,385     | +30,265,152    | +0.90%   |
-| 20         | 3,367,269,233     | (baseline)     | —        |
-| 50         | 3,361,217,551     | -6,051,682     | -0.18%   |
-| 200        | 3,358,202,100     | -9,067,133     | -0.27%   |
+| 5          | 340,179,545       | +3,155,985     | +0.94%   |
+| 20         | 337,023,560       | (baseline)     | —        |
+| 50         | 336,394,501       | -629,059       | -0.19%   |
+| 200        | 336,084,715       | -938,845       | -0.28%   |
 
 Larger GCSWEEPMAX consistently reduces total instruction count. The
-relationship shows diminishing returns: the 5→20 jump saves 30.3M
-instructions, while 50→200 saves only 3.0M.
+relationship shows diminishing returns: the 5→20 jump saves 3.16M
+instructions, while 50→200 saves only 310K.
 
-### (b) sweeplist Call Distribution
+### (b) Sweep-Phase Step Costs (GCSswpallgc)
 
-| GCSWEEPMAX | sweeplist calls | sweeplist Ir (instructions) | sweeplist % of total |
-|------------|----------------|----------------------------|---------------------|
-| 5          | 603,011        | 52,282,930                 | 1.54%               |
-| 20         | 151,259        | 40,989,130                 | 1.22%               |
-| 50         | 60,911         | 38,730,430                 | 1.15%               |
-| 200        | 15,732         | 37,600,955                 | 1.12%               |
+| GCSWEEPMAX | sweeplist (instrs) | sweeplist % of total | freeobj (instrs) | luaC_step (instrs) |
+|------------|-------------------|---------------------|-----------------|-------------------|
+| 5          | 5,470,214         | 1.61%               | 3,606,085       | 1,894,752         |
+| 20         | 4,292,664         | 1.27%               | 3,606,085       | 1,329,752         |
+| 50         | 4,057,214         | 1.21%               | 3,606,085       | 1,217,240         |
+| 200        | 3,939,389         | 1.17%               | 3,606,085       | 1,163,708         |
 
-With GCSWEEPMAX=5, the sweeper is called 603K times (each processing 5
-objects). With GCSWEEPMAX=200, it's called only 15.7K times (each processing
-200 objects) — a 38x reduction in call count. The total sweeplist cost drops
-from 52.3M to 37.6M instructions, a 28% reduction.
-
-### GC-related function costs (GCSWEEPMAX=5 vs 200)
-
-| Function        | GCSWEEPMAX=5  | GCSWEEPMAX=200 | Difference   |
-|-----------------|---------------|----------------|--------------|
-| sweeplist       | 52,282,930    | 37,600,955     | -14,681,975  |
-| singlestep      | 43,398,642    | 25,780,272     | -17,618,370  |
-| luaC_step       | 19,584,488    | 12,544,756     | -7,039,732   |
-| propagatemark   | 63,032,663    | 63,032,663     | 0            |
-| traversearray   | 58,981,088    | 58,981,088     | 0            |
-| reallymarkobject| 36,599,903    | 36,599,903     | 0            |
-| freeobj         | 36,006,085    | 36,006,085     | 0            |
-| luaC_newobj     | 42,005,439    | 42,005,439     | 0            |
+`sweeplist` cost drops from 5.47M to 3.94M instructions across the
+5→200 range — a 28% reduction. `freeobj` remains constant at 3,606,085
+instructions across all values, confirming that the total sweep work
+(number of objects freed) is invariant to granularity. Only the overhead
+of entering and exiting `sweeplist` changes.
 
 ---
 
@@ -58,25 +46,18 @@ from 52.3M to 37.6M instructions, a 28% reduction.
 ### Why larger GCSWEEPMAX reduces total instructions
 
 Each call to `sweepstep()` → `sweeplist()` has a fixed overhead: function
-entry, reading the GCSWEEPMAX variable, setting up the loop counter, checking
-the sweep pointer, and returning. With GCSWEEPMAX=5, this overhead is paid
-603K times. With GCSWEEPMAX=200, it's paid only 15.7K times. The actual
+entry, reading the GCSWEEPMAX variable, setting up the loop counter,
+checking the sweep pointer, and returning. With GCSWEEPMAX=5, this
+overhead is paid many more times than with GCSWEEPMAX=200. The actual
 per-object sweep work (checking marks, freeing dead objects) is the same
 regardless of batch size — only the call overhead changes.
 
-### Why non-GC functions are unaffected
+### freeobj invariance confirms total work is preserved
 
-`luaV_execute`, `luaH_newkey`, `luaH_resize`, `malloc`, `_int_free` all show
-identical instruction counts across all four values. GCSWEEPMAX only controls
-how sweep work is batched, not how much total sweep work exists or how the
-rest of the program runs.
-
-### Why the mark phase is unaffected
-
-`propagatemark`, `traversearray`, and `reallymarkobject` are identical across
-all values. This confirms GCSWEEPMAX only affects the sweep phase. The mark
-phase runs the same number of cycles and visits the same objects regardless
-of how the sweep is batched.
+`freeobj` is identical (3,606,085) across all four values. This is the
+key finding: sweep-step tuning only affects how work is *distributed*
+across incremental steps, not the total volume of work. The same number
+of objects are allocated, marked, and freed regardless of GCSWEEPMAX.
 
 ### The throughput vs latency tradeoff
 
@@ -98,43 +79,38 @@ GC pause.
 
 | Transition | Instructions saved | Marginal gain |
 |------------|-------------------|---------------|
-| 5 → 20     | 30,265,152        | large         |
-| 20 → 50    | 6,051,682         | moderate      |
-| 50 → 200   | 3,015,451         | small         |
+| 5 → 20     | 3,155,985         | large         |
+| 20 → 50    | 629,059           | moderate      |
+| 50 → 200   | 309,786           | small         |
 
 The biggest win is moving from 5 to 20. Beyond 50, additional increases
 provide minimal benefit because the per-call overhead is already amortized
 over enough objects that it's no longer the bottleneck.
 
-### Sweep as a fraction of total cost
-
-Even at GCSWEEPMAX=5, sweep-related functions account for only ~1.5% of
-total program instructions. The real cost centers are table operations:
-`luaH_newkey` (11.3%), `_int_free` (10.4%), `luaH_resize` (9.6%), and
-`malloc` (6.6%). This means that for this workload, tuning GCSWEEPMAX
-produces a measurable but modest improvement — the dominant costs lie
-elsewhere (allocation and table resizing).
-
 ---
 
 ## Files
 
-- `benchmark.sh` — the benchmarking script
-- `results.txt` — raw output from all runs
-- `sweep_5.out` — callgrind output for GCSWEEPMAX=5
-- `sweep_20.out` — callgrind output for GCSWEEPMAX=20
-- `sweep_50.out` — callgrind output for GCSWEEPMAX=50
-- `sweep_200.out` — callgrind output for GCSWEEPMAX=200
+- `d2_results.txt` — benchmark results
+- `READMED2.md` — this report
 
 ## How to Reproduce
 
 ```bash
 cd "Part B"
-gcc -g -O2 \
-    -I../lua5.5-student-src/lua-5.5.0/src \
-    -o sweeptest sweeptest.c \
-    ../lua5.5-student-src/lua-5.5.0/src/liblua.a \
-    -lm -ldl
-bash "../Part D/Part 2/benchmark.sh"
-cat "../Part D/Part 2/results.txt"
+
+# Build Lua with Part B patches
+cd lua-5.5.0
+make clean && make all MYCFLAGS="-g -O2"
+cd ..
+
+# Compile sweeptest
+gcc -g -O2 -I lua-5.5.0/src -o sweeptest sweeptest.c lua-5.5.0/src/liblua.a -lm -ldl
+
+# Run benchmarks
+for val in 5 20 50 200; do
+    echo "=== GCSWEEPMAX = $val ==="
+    valgrind --tool=callgrind --callgrind-out-file=sweep_${val}.out ./sweeptest $val
+    callgrind_annotate sweep_${val}.out | grep -E "PROGRAM TOTALS|sweeplist|freeobj|luaC_step"
+done
 ```

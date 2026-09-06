@@ -174,6 +174,7 @@ LUAI_FUNC void luaH_resizearray (lua_State *L, Table *t, unsigned nasize);
 LUAI_FUNC lu_mem luaH_size (Table *t);
 LUAI_FUNC void luaH_free (lua_State *L, Table *t);
 LUAI_FUNC Table *luaH_new_arena (lua_State *L, FrameArena *arena);  /* C.2 */
+LUAI_FUNC void luaH_free_internals (lua_State *L, Table *t);  /* C.2 */
 LUAI_FUNC int luaH_next (lua_State *L, Table *t, StkId key);
 LUAI_FUNC lua_Unsigned luaH_getn (lua_State *L, Table *t);
 

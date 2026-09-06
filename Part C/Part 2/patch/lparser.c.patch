@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/lparser.c	2025-12-15 10:44:40.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lparser.c	2026-08-28 17:16:28.119407300 +0000
+--- original/lua-5.5.0/src/lparser.c
++++ lua5.5-student-src/lua-5.5.0/src/lparser.c
 @@ -28,6 +28,8 @@
  #include "lstring.h"
  #include "ltable.h"
@@ -37,19 +37,42 @@
  }
  
  
-@@ -814,6 +825,7 @@
+@@ -749,6 +760,20 @@
+   if (bl->previous && bl->upval)  /* need a 'close'? */
+     luaK_codeABC(fs, OP_CLOSE, stklevel, 0, 0);
+   fs->freereg = stklevel;  /* free registers */
++  /* C.2: save table-local info before removevars destroys it */
++  {
++      int v;
++      for (v = bl->nactvar; v < fs->nactvar; v++) {
++          Vardesc *vd = getlocalvardesc(fs, v);
++          if (vd->vd.is_table && fs->num_arena_candidates < MAX_ARENA_CANDIDATES) {
++              ArenaCandidate *ac = &fs->arena_candidates[fs->num_arena_candidates++];
++              ac->vidx = v;
++              ac->newtable_pc = vd->vd.newtable_pc;
++              ac->escapes = vd->vd.escapes;
++              ac->name = vd->vd.name;
++          }
++      }
++  }
+   removevars(fs, bl->nactvar);  /* remove block locals */
+   lua_assert(bl->nactvar == fs->nactvar);  /* back to level on entry */
+   if (bl->isloop == 2)  /* has to fix pending breaks? */
+@@ -814,6 +839,8 @@
    fs->ndebugvars = 0;
    fs->nactvar = 0;
    fs->needclose = 0;
 +  fs->num_escape_deps = 0;  /* C.1: no Rule 3 store-escape deps yet */
++  fs->num_arena_candidates = 0;  /* C.2: no saved table-locals yet */
    fs->firstlocal = ls->dyd->actvar.n;
    fs->firstlabel = ls->dyd->label.n;
    fs->bl = NULL;
-@@ -831,6 +843,62 @@
+@@ -831,6 +858,108 @@
    lua_State *L = ls->L;
    FuncState *fs = ls->fs;
    Proto *f = fs->f;
-+  /* C.1: fixed-point propagation for Rule 3 store-escape dependencies */
++  /* C.1: fixed-point propagation for Rule 3 store-escape dependencies
++     C.2: propagate across both live vars (nactvar) and saved buffer */
 +  {
 +      int changed = 1;
 +      while (changed) {
@@ -57,11 +80,38 @@
 +          changed = 0;
 +          for (d = 0; d < fs->num_escape_deps; d++) {
 +              EscapeDep *dep = &fs->escape_deps[d];
-+              Vardesc *src = getlocalvardesc(fs, dep->src_vidx);
-+              Vardesc *dst = getlocalvardesc(fs, dep->dep_vidx);
-+              if (src->vd.escapes && !dst->vd.escapes) {
-+                  dst->vd.escapes = 1;
-+                  changed = 1;
++              int src_escapes = 0;
++              /* look up src escape status: live vars first, then buffer */
++              if (dep->src_vidx < fs->nactvar) {
++                  src_escapes = getlocalvardesc(fs, dep->src_vidx)->vd.escapes;
++              } else {
++                  int c;
++                  for (c = 0; c < fs->num_arena_candidates; c++) {
++                      if (fs->arena_candidates[c].vidx == dep->src_vidx) {
++                          src_escapes = fs->arena_candidates[c].escapes;
++                          break;
++                      }
++                  }
++              }
++              if (src_escapes) {
++                  /* propagate to dep target: live vars first, then buffer */
++                  if (dep->dep_vidx < fs->nactvar) {
++                      Vardesc *dst = getlocalvardesc(fs, dep->dep_vidx);
++                      if (!dst->vd.escapes) {
++                          dst->vd.escapes = 1;
++                          changed = 1;
++                      }
++                  } else {
++                      int c;
++                      for (c = 0; c < fs->num_arena_candidates; c++) {
++                          if (fs->arena_candidates[c].vidx == dep->dep_vidx
++                              && !fs->arena_candidates[c].escapes) {
++                              fs->arena_candidates[c].escapes = 1;
++                              changed = 1;
++                              break;
++                          }
++                      }
++                  }
 +              }
 +          }
 +      }
@@ -69,6 +119,7 @@
 +  /* C.1: debug output — print escape analysis results */
 +  {
 +      int v;
++      /* function-level table-locals (still in nactvar) */
 +      for (v = 0; v < fs->nactvar; v++) {
 +          Vardesc *vd = getlocalvardesc(fs, v);
 +          if (vd->vd.is_table) {
@@ -77,26 +128,43 @@
 +                     vd->vd.escapes ? "ESCAPES" : "NON-ESCAPING");
 +          }
 +      }
++      /* block-scoped table-locals (saved in buffer) */
++      for (v = 0; v < fs->num_arena_candidates; v++) {
++          ArenaCandidate *ac = &fs->arena_candidates[v];
++          printf("[escape-analysis] '%s' -> %s\n",
++                 getstr(ac->name),
++                 ac->escapes ? "ESCAPES" : "NON-ESCAPING");
++      }
 +  }
-+    /* C.2: collect non-escaping table PCs and store in Proto */
++  /* C.2: collect non-escaping table PCs from live vars + buffer */
 +  {
 +      int v;
 +      int count = 0;
-+      /* first pass: count non-escaping tables */
++      /* count from live vars */
 +      for (v = 0; v < fs->nactvar; v++) {
 +          Vardesc *vd = getlocalvardesc(fs, v);
 +          if (vd->vd.is_table && !vd->vd.escapes)
 +              count++;
 +      }
++      /* count from buffer */
++      for (v = 0; v < fs->num_arena_candidates; v++) {
++          if (!fs->arena_candidates[v].escapes)
++              count++;
++      }
 +      if (count > 0) {
 +          f->arena_pcs = luaM_newvector(L, count, int);
 +          f->num_arena_pcs = 0;
-+          /* second pass: store the PCs */
++          /* collect from live vars */
 +          for (v = 0; v < fs->nactvar; v++) {
 +              Vardesc *vd = getlocalvardesc(fs, v);
-+              if (vd->vd.is_table && !vd->vd.escapes) {
++              if (vd->vd.is_table && !vd->vd.escapes)
 +                  f->arena_pcs[f->num_arena_pcs++] = vd->vd.newtable_pc;
-+              }
++          }
++          /* collect from buffer */
++          for (v = 0; v < fs->num_arena_candidates; v++) {
++              if (!fs->arena_candidates[v].escapes)
++                  f->arena_pcs[f->num_arena_pcs++] =
++                      fs->arena_candidates[v].newtable_pc;
 +          }
 +      }
 +      else {
@@ -108,7 +176,7 @@
    luaK_ret(fs, luaY_nvarstack(fs), 0);  /* final return */
    leaveblock(fs);
    lua_assert(fs->bl == NULL);
-@@ -1051,6 +1119,8 @@
+@@ -1051,6 +1180,8 @@
    check_match(ls, /*{*/ '}', '{' /*}*/, line);
    lastlistfield(fs, &cc);
    luaK_settablesize(fs, pc, t->u.info, cc.na, cc.nh);
@@ -117,7 +185,7 @@
  }
  
  /* }====================================================================== */
-@@ -1140,6 +1210,7 @@
+@@ -1140,6 +1271,7 @@
    expdesc args;
    int base, nparams;
    int line = ls->linenumber;
@@ -125,7 +193,7 @@
    switch (ls->t.token) {
      case '(': {  /* funcargs -> '(' [ explist ] ')' */
        luaX_next(ls);
-@@ -1147,6 +1218,12 @@
+@@ -1147,6 +1279,12 @@
          args.k = VVOID;
        else {
          explist(ls, &args);
@@ -138,7 +206,7 @@
          if (hasmultret(args.k))
            luaK_setmultret(fs, &args);
        }
-@@ -1175,7 +1252,42 @@
+@@ -1175,7 +1313,42 @@
        luaK_exp2nextreg(fs, &args);  /* close last argument */
      nparams = fs->freereg - (base+1);
    }
@@ -181,7 +249,7 @@
    luaK_fixline(fs, line);
    /* call removes function and arguments and leaves one result (unless
       changed later) */
-@@ -1515,8 +1627,42 @@
+@@ -1515,8 +1688,42 @@
      nexps = explist(ls, &e);
      if (nexps != nvars)
        adjust_assign(ls, nvars, nexps, &e);
@@ -225,7 +293,7 @@
        luaK_storevar(ls->fs, &lh->v, &e);
        return;  /* avoid default */
      }
-@@ -1855,6 +2001,23 @@
+@@ -1855,6 +2062,23 @@
      adjust_assign(ls, nvars, nexps, &e);
      adjustlocalvars(ls, nvars);
    }
@@ -249,7 +317,7 @@
    checktoclose(fs, toclose);
  }
  
-@@ -2024,6 +2187,13 @@
+@@ -2024,6 +2248,13 @@
      nret = 0;  /* return no values */
    else {
      nret = explist(ls, &e);  /* optional return values */

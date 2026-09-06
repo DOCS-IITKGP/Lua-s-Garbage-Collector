@@ -1,5 +1,5 @@
---- original/lua-5.5.0/src/lstate.h	2025-12-15 10:44:40.000000000 +0000
-+++ lua5.5-student-src/lua-5.5.0/src/lstate.h	2026-08-28 17:14:26.858680400 +0000
+--- original/lua-5.5.0/src/lstate.h
++++ lua5.5-student-src/lua-5.5.0/src/lstate.h
 @@ -12,6 +12,7 @@
  
  /* Some header files included here need this definition */
