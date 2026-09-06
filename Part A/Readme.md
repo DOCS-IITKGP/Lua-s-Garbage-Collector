@@ -1,23 +1,11 @@
 # Part A - Lua 5.5 Garbage Collector Analysis
 
-## 1. Overview
+##  Overview
 
 The objective of Part A is to understand the stock Lua 5.5.0 garbage collector using the Lua GC source code and Callgrind results, and to compare the Full, Incremental, and Generational configurations.
 
-## 2. Files Included
 
-The Part A submission should contain:
-
-- `Part_A_Final.pdf` - Main written report containing the explanations, results, calculations, comparison, and conclusion.
-- `Part_A_Final.tex` - LaTeX source used to generate the report.
-- Full-GC Callgrind call graph - submitted separately as required.
-- Incremental-GC Callgrind call graph - submitted separately as required.
-- Generational-GC Callgrind call graph - submitted separately as required.
-- Raw Callgrind output files for the three configurations - submitted as experimental evidence.
-
-The report itself does **not** embed the call graphs. They are provided separately so that the report remains within the page limit.
-
-## 3. Benchmark
+##  Benchmark
 
 The supplied benchmark uses:
 
@@ -42,7 +30,7 @@ Every 100th outer object is stored in the `survivors` table. Thus, the workload 
 
 This allocation pattern is particularly relevant when comparing the generational collector with the other configurations.
 
-## 4. GC Configurations
+##  GC Configurations
 
 The three executables use the following Lua GC operations:
 
@@ -56,7 +44,7 @@ An important detail is that `LUA_GCCOLLECT` performs a full collection when the 
 
 Therefore, the Full-GC and Incremental results are expected to be relatively close for the workload measured after the wrapper call.
 
-## 5. Callgrind Measurement
+##  Callgrind Measurement
 
 Callgrind reports the number of executed instructions using the `Ir` event.
 
@@ -78,7 +66,7 @@ For the original benchmark, the results are:
 | Incremental | 3,700,133,914 | 23.46% |
 | Generational | 3,574,116,509 | 20.93% |
 
-## 6. Main Observations
+##  Main Observations
 
 ### Full vs Incremental
 
@@ -119,7 +107,7 @@ is nested. The cost of `propagatemark` is already included in its callers' inclu
 
 Therefore, the report uses the high-level inclusive cost of `luaC_step` rather than summing the percentages of all nested functions.
 
-## 7. Important Call-Graph Paths
+##  Important Call-Graph Paths
 
 The main source-level paths discussed in the report are:
 
@@ -155,7 +143,7 @@ sweepgen -> freeobj
 
 which represents generation-aware sweeping and object reclamation.
 
-## 8. Reproducing the Callgrind Runs
+##  Reproducing the Callgrind Runs
 
 After building the Lua 5.5 library and wrapper executables, a typical Callgrind run is:
 
@@ -167,7 +155,7 @@ valgrind --tool=callgrind ./generationalgc
 
 The generated `callgrind.out.*` files can then be opened using a Callgrind visualization tool such as KCachegrind/QCachegrind to inspect the call graph and inclusive instruction costs.
 
-## 9. Conclusion
+##  Conclusion
 
 The main result of Part A is that the measured GC instruction share is:
 
