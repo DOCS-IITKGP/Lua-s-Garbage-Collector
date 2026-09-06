@@ -17,17 +17,6 @@ The work is divided into the three sub-parts required by the assignment:
 2. Workload-size analysis
 3. `perf` hardware-counter analysis
 
-## Main Files
-
-- `D1_Stock_GC_Benchmarking_Report_Final.pdf` - Main written report containing explanations, results, calculations, comparisons, and conclusion.
-- `D1_Stock_GC_Benchmarking_Report_Final.tex` - LaTeX source of the report.
-- `README_D1.md` - This README.
-- Callgrind call-graph images - submitted separately.
-- Raw Callgrind output files - submitted separately.
-- `perf` terminal output/results - submitted as supporting evidence.
-
-The report intentionally does **not** embed the call-graph images or raw Callgrind outputs. They are supplied separately as required evidence.
-
 ## 1. Assignment Requirements Covered
 
 ### D.1(a) Callgrind
