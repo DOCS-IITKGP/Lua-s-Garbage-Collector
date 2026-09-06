@@ -155,27 +155,7 @@ sweepgen -> freeobj
 
 which represents generation-aware sweeping and object reclamation.
 
-## 8. Expected Submission Structure
-
-A simple submission structure is:
-
-```text
-Part_A/
-|
-|-- Part_A_Final.pdf
-|-- Part_A_Final.tex
-|-- fullgc_callgraph.png
-|-- incrementalgc_callgraph.png
-|-- generationalgc_callgraph.png
-|-- callgrind.out.<Full>
-|-- callgrind.out.<Incremental>
-|-- callgrind.out.<Generational>
-`-- README.md
-```
-
-The exact Callgrind filenames may depend on the run/PID used on the system.
-
-## 9. Reproducing the Callgrind Runs
+## 8. Reproducing the Callgrind Runs
 
 After building the Lua 5.5 library and wrapper executables, a typical Callgrind run is:
 
@@ -187,7 +167,7 @@ valgrind --tool=callgrind ./generationalgc
 
 The generated `callgrind.out.*` files can then be opened using a Callgrind visualization tool such as KCachegrind/QCachegrind to inspect the call graph and inclusive instruction costs.
 
-## 10. Conclusion
+## 9. Conclusion
 
 The main result of Part A is that the measured GC instruction share is:
 
